@@ -1,0 +1,73 @@
+[package]
+name = "radium-textures"
+version = "1.0.0"
+edition = "2021"
+authors = ["Radium Textures"]
+description = "Skyrim texture optimization tool for Linux with MO2 support"
+
+[dependencies]
+# Database
+rusqlite = { version = "0.32", features = ["bundled", "blob"] }
+
+# CLI and logging
+clap = { version = "4.5", features = ["derive"] }
+env_logger = "0.11"
+log = "0.4"
+
+# Progress indicators
+indicatif = { version = "0.17", features = ["rayon"] }
+
+# Parallelism
+rayon = "1.10"
+crossbeam-channel = "0.5"
+
+# File system and I/O
+walkdir = "2.5"
+glob = "0.3"
+memmap2 = "0.9"
+
+# BSA archive support
+ba2 = "3.0"
+
+# Compression (for BSA archives)
+flate2 = "1.0"
+lz4 = "1.25"
+
+# Binary parsing
+byteorder = "1.5"
+nom = "7.1"
+
+# Pattern matching
+regex = "1.10"
+wildmatch = "2.3"
+
+# System info
+sysinfo = "0.31"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Unicode normalization
+unicode-normalization = "0.1"
+
+# Utilities
+itertools = "0.13"
+
+# GUI
+eframe = "0.29"
+egui = "0.29"
+rfd = "0.15"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dirs = "5.0"
+num_cpus = "1.16"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 1

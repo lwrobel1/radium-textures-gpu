@@ -1,0 +1,45 @@
+# Fallout 4 Exclusion Patterns
+# Lines starting with # are comments
+#
+# Wildcard patterns: Use * for any characters (e.g., *_color.dds)
+# Path exclusions: Start with \ (e.g., \interface)
+
+# ===== Common Texture Suffixes to Exclude =====
+*_color.dds
+*_emissive.dds
+*_normal.dds
+*_g.dds
+*_s.dds
+*_OpenGL.dds
+
+# ===== LOD Textures (Not Loaded In-Game) =====
+*lod*_p.dds
+*_lod.dds
+
+# ===== Interface and UI =====
+\interface
+\pipboy
+\hud
+
+# ===== Terrain and Landscape (Performance Critical) =====
+\terrain
+\landscape
+
+# ===== Large Creatures and Bosses =====
+\actors\deathclaw
+\actors\supermutant\behemoth
+\actors\mirelurk\queen
+\actors\yaoguai
+
+# ===== LOD and Distance Objects =====
+\lod
+\lodgen
+\dyndolod
+
+# ===== Effects and Special Textures =====
+\effects
+\particles
+
+# ===== Default/Dummy Textures =====
+default_n.dds
+dummy.dds

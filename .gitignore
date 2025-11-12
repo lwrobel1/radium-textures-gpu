@@ -1,0 +1,29 @@
+# Rust build artifacts
+/target
+Cargo.lock
+
+# Test output
+/test_output
+/decompiled_all
+
+# Claude Code
+.claude/
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Log files
+*.log
+
+# Session notes and temporary work files
+TODAYS_WORK.md
+*_WORK.md
+session_notes.md
+
+# User-specific config
+.config/
