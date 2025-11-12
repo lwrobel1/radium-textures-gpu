@@ -26,7 +26,7 @@ use mo2::{Profile, VirtualFileSystem};
 #[command(about = "Skyrim texture optimization for Linux with MO2 support", long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 
     /// Enable verbose logging
     #[arg(short, long, global = true)]
@@ -152,25 +152,26 @@ fn main() -> Result<()> {
     }
 
     match cli.command {
-        Commands::Gui => {
+        // Default to GUI when no command is provided
+        None | Some(Commands::Gui) => {
             return gui::run().map_err(|e| anyhow::anyhow!("GUI error: {}", e));
         }
-        Commands::Analyze { profile, mods, data } => {
+        Some(Commands::Analyze { profile, mods, data }) => {
             analyze_profile(profile, mods, data)?;
         }
-        Commands::ParseBsa { bsa } => {
+        Some(Commands::ParseBsa { bsa }) => {
             parse_bsa(bsa)?;
         }
-        Commands::ParseDds { dds } => {
+        Some(Commands::ParseDds { dds }) => {
             parse_dds(dds)?;
         }
-        Commands::Discover { profile, mods, data } => {
+        Some(Commands::Discover { profile, mods, data }) => {
             discover_textures(profile, mods, data)?;
         }
-        Commands::Filter { profile, mods, data, preset } => {
+        Some(Commands::Filter { profile, mods, data, preset }) => {
             filter_textures(profile, mods, data, preset)?;
         }
-        Commands::Optimize { profile, mods, data, output, preset } => {
+        Some(Commands::Optimize { profile, mods, data, output, preset }) => {
             optimize_textures(profile, mods, data, output, preset)?;
         }
     }
