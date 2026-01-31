@@ -32,6 +32,13 @@ pub struct AppSettings {
     // Thread configuration
     #[serde(default = "default_thread_count")]
     pub thread_count: usize,
+    // Compression backend (nvtt3 = fast CUDA, texconv = original Wine)
+    #[serde(default = "default_backend")]
+    pub backend: String,
+}
+
+fn default_backend() -> String {
+    "auto".to_string()  // Auto-detect best available
 }
 
 fn default_thread_count() -> usize {
@@ -57,6 +64,7 @@ impl Default for AppSettings {
             custom_parallax: default_parallax(),
             custom_material: default_material(),
             thread_count: default_thread_count(),
+            backend: default_backend(),
         }
     }
 }
@@ -392,6 +400,22 @@ impl eframe::App for VramrApp {
                         .text("threads")
                         .show_value(true));
                     ui.label(format!("(max: {})", max_threads));
+                    ui.end_row();
+
+                    // Compression backend selector
+                    ui.label("Backend:");
+                    egui::ComboBox::from_id_salt("backend_selector")
+                        .selected_text(match self.settings.backend.as_str() {
+                            "nvtt3" => "NVTT3 (CUDA) - Fast",
+                            "texconv" => "texconv (Wine)",
+                            _ => "Auto (Best Available)",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.settings.backend, "auto".to_string(), "Auto (Best Available)");
+                            ui.selectable_value(&mut self.settings.backend, "nvtt3".to_string(), "NVTT3 (CUDA) - Fast");
+                            ui.selectable_value(&mut self.settings.backend, "texconv".to_string(), "texconv (Wine)");
+                        });
+                    ui.label("");  // Empty label for alignment
                     ui.end_row();
                 });
 

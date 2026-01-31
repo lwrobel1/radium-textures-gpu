@@ -318,42 +318,58 @@ impl OptimizationWorker {
             groups.gloss_resize.len()
         )));
 
-        // Optimize - find texconv.exe (MUST be absolute path for Wine)
-        // Try multiple locations and convert to absolute path
-        let texconv_path = if PathBuf::from("./texconv.exe").exists() {
-            // Convert relative to absolute - look in current working directory
-            std::env::current_dir()?.join("texconv.exe")
-        } else if PathBuf::from("texconv.exe").exists() {
-            std::env::current_dir()?.join("texconv.exe")
-        } else {
-            // Look in the executable's directory
-            if let Ok(exe_path) = std::env::current_exe() {
-                if let Some(exe_dir) = exe_path.parent() {
-                    let texconv_in_exe_dir = exe_dir.join("texconv.exe");
-                    if texconv_in_exe_dir.exists() {
-                        texconv_in_exe_dir
-                    } else {
-                        anyhow::bail!("texconv.exe not found. Tried: ./texconv.exe, {:?}", texconv_in_exe_dir);
-                    }
-                } else {
-                    anyhow::bail!("texconv.exe not found. Tried: ./texconv.exe, [executable directory]");
-                }
-            } else {
-                anyhow::bail!("texconv.exe not found. Tried: ./texconv.exe, texconv.exe");
+        // Find compression tools
+        let tools = optimization::CompressionTools::find();
+
+        // Determine backend based on settings
+        let requested_backend = match settings.backend.to_lowercase().as_str() {
+            "nvtt3" | "cuda" => optimization::CompressionBackend::Nvtt3,
+            "texconv" | "wine" => optimization::CompressionBackend::Texconv,
+            _ => {
+                // Auto-detect: prefer NVTT3 for speed
+                tools.best_available().unwrap_or(optimization::CompressionBackend::Texconv)
             }
         };
 
-        let _ = tx.send(WorkerMessage::Log(format!("Using texconv at: {:?}", texconv_path)));
-        let _ = tx.send(WorkerMessage::Log(format!("Using {} threads for texconv processing", settings.thread_count)));
+        // Check availability and fall back if needed
+        let backend = if tools.is_available(requested_backend) {
+            requested_backend
+        } else {
+            match tools.best_available() {
+                Some(b) => {
+                    let _ = tx.send(WorkerMessage::Log(format!(
+                        "Requested backend {:?} not available, falling back to {:?}",
+                        requested_backend, b
+                    )));
+                    b
+                }
+                None => {
+                    anyhow::bail!(
+                        "No compression tools found. Please install either:\n\
+                         - texconv.exe (in current directory)\n\
+                         - NVTT3 (in tools/nvtt3/ directory)"
+                    );
+                }
+            }
+        };
+
+        let _ = tx.send(WorkerMessage::Log(format!("Using compression backend: {}", backend.name())));
+        if let Some(ref path) = tools.texconv_path {
+            let _ = tx.send(WorkerMessage::Log(format!("  texconv: {:?}", path)));
+        }
+        if let Some(ref path) = tools.nvtt3_path {
+            let _ = tx.send(WorkerMessage::Log(format!("  nvtt_resize_compress: {:?}", path)));
+        }
+        let _ = tx.send(WorkerMessage::Log(format!("Using {} threads", settings.thread_count)));
 
         let _ = tx.send(WorkerMessage::Progress {
             current: 6,
             total: 6,
             message: "Optimizing textures...".to_string(),
         });
-        let _ = tx.send(WorkerMessage::Log("Running texconv optimization...".to_string()));
+        let _ = tx.send(WorkerMessage::Log(format!("Running {} optimization...", backend.name())));
 
-        let stats = optimization::optimize_all(&groups, &texconv_path, Some(settings.thread_count))?;
+        let stats = optimization::optimize_all(&groups, &tools, backend, Some(settings.thread_count))?;
 
         let _ = tx.send(WorkerMessage::Log(format!(
             "Optimization complete in {:.2?}",

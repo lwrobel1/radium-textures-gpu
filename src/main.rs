@@ -122,6 +122,10 @@ enum Commands {
         /// Optimization preset
         #[arg(long, value_enum, default_value = "optimum")]
         preset: Preset,
+
+        /// Compression backend (nvtt3 = fast native CUDA, texconv = original Wine-based)
+        #[arg(long, value_enum, default_value = "nvtt3")]
+        backend: optimization::CompressionBackend,
     },
 }
 
@@ -171,8 +175,8 @@ fn main() -> Result<()> {
         Some(Commands::Filter { profile, mods, data, preset }) => {
             filter_textures(profile, mods, data, preset)?;
         }
-        Some(Commands::Optimize { profile, mods, data, output, preset }) => {
-            optimize_textures(profile, mods, data, output, preset)?;
+        Some(Commands::Optimize { profile, mods, data, output, preset, backend }) => {
+            optimize_textures(profile, mods, data, output, preset, backend)?;
         }
     }
 
@@ -620,6 +624,7 @@ fn optimize_textures(
     data_dir: PathBuf,
     output_dir: PathBuf,
     preset: Preset,
+    backend: optimization::CompressionBackend,
 ) -> Result<()> {
     info!("=== Radium Textures Optimization Pipeline ===");
 
@@ -741,32 +746,41 @@ fn optimize_textures(
     info!("  Emissive resize: {}", groups.emissive_resize.len());
     info!("  Gloss resize: {}", groups.gloss_resize.len());
 
-    // Step 6: Optimize with texconv
-    info!("\n=== Step 6: Running texconv Optimization ===");
+    // Step 6: Optimize textures
+    info!("\n=== Step 6: Running Texture Optimization ===");
 
-    // Find texconv.exe - try current directory first, then executable directory
-    let texconv_path = if std::path::PathBuf::from("./texconv.exe").exists() {
-        std::path::PathBuf::from("./texconv.exe")
-            .canonicalize()
-            .unwrap_or_else(|_| std::path::PathBuf::from("./texconv.exe"))
-    } else if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let texconv_in_exe_dir = exe_dir.join("texconv.exe");
-            if texconv_in_exe_dir.exists() {
-                texconv_in_exe_dir
-            } else {
-                anyhow::bail!("texconv.exe not found. Tried: ./texconv.exe, {:?}", texconv_in_exe_dir);
-            }
-        } else {
-            anyhow::bail!("texconv.exe not found. Tried: ./texconv.exe, [executable directory]");
-        }
+    // Find compression tools
+    let tools = optimization::CompressionTools::find();
+
+    // Determine which backend to use
+    let actual_backend = if tools.is_available(backend) {
+        backend
     } else {
-        anyhow::bail!("texconv.exe not found. Tried: ./texconv.exe");
+        // Fall back to whatever is available
+        match tools.best_available() {
+            Some(b) => {
+                info!("Requested backend {:?} not available, falling back to {:?}", backend, b);
+                b
+            }
+            None => {
+                anyhow::bail!(
+                    "No compression tools found. Please install either:\n\
+                     - texconv.exe (in current directory)\n\
+                     - NVTT3 (in tools/nvtt3/ directory)"
+                );
+            }
+        }
     };
 
-    info!("Using texconv at: {:?}", texconv_path);
+    info!("Using compression backend: {}", actual_backend.name());
+    if let Some(ref path) = tools.texconv_path {
+        info!("  texconv: {:?}", path);
+    }
+    if let Some(ref path) = tools.nvtt3_path {
+        info!("  nvcompress: {:?}", path);
+    }
 
-    let stats = optimization::optimize_all(&groups, &texconv_path, None)?;  // None = use all CPU threads
+    let stats = optimization::optimize_all(&groups, &tools, actual_backend, None)?;
 
     // Final summary
     info!("\n=== Optimization Complete ===");

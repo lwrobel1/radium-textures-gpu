@@ -1,38 +1,81 @@
+# Skyrim SE Exclusions
+# Based on VRAMr analysis and texture format best practices
+#
+# Pattern types:
+#   *pattern.dds  - Wildcard filename match
+#   \path         - Directory exclusion
+#   filename.dds  - Exact filename match
+
+# ===== PBR Texture Suffixes (Community Shaders) =====
+# These use specific channel layouts that shouldn't be modified
 *_color.dds
 *_emissive.dds
 *_normal.dds
+*_rmaos.dds
+
+# ===== Specular/Glow/Environment Maps =====
+# Specular is typically embedded in normal map alpha channel
+# Separate _s.dds files are rare and shouldn't be resized
+# Note: *_s.dds won't match *_rmaos.dds (different suffix)
+*_s.dds
+*_g.dds
+*_e.dds
+
+# ===== Other Texture Suffixes =====
 *_OpenGL.dds
+*envmask.dds
+*_sk.dds
+*_b.dds
+*_a.dds
+*_h.dds
+
+# ===== Known Problematic Textures =====
+# These cause CTDs or visual issues when resized
 icewall*.dds
 *DrJ*.dds
-*envmask.dds
-*_sk.dds 
-*_b.dds 
-*_a.dds 
-*_h.dds
-pot_n.dds
-tg_field_rocks.dds 
-tg_field_rocks_n.dds 
-tg_snow_pebbles.dds 
-tg_snow_pebbles_n.dds 
 clgorehowl*.dds
+
+# ===== Specific Files =====
+pot_n.dds
+tg_field_rocks.dds
+tg_field_rocks_n.dds
+tg_snow_pebbles.dds
+tg_snow_pebbles_n.dds
 woodcut.dds
 woodcut_n.dds
 dummy.dds
-*lod*_p.dds
 default_n.dds
 basket01.dds
-\!_Rudy_Misc
-\!SR
-\!!SR
-\interface 
-\effects03\newmiller\jewels2 
-\actors\character\payeyes
-\littlebaron 
-\luxonbeacon 
-\landscape\mountains 
-\landscape\rocks 
-\terrain 
+
+# ===== LOD Textures =====
+# Already optimized for distance, resizing breaks LOD system
+*lod*_p.dds
+
+# ===== Interface/UI =====
+\interface
+
+# ===== Effects =====
+\effects03\newmiller\jewels2
+
+# ===== Community Shaders =====
+# Terrain shadow heightmaps - specific data format for CS
+\HeightMaps
+# Environment reflection cubemaps
+\cubemaps
+
+# ===== Terrain & Landscape =====
+# Large continuous textures, special handling needed
+\terrain
+\landscape\mountains
+\landscape\rocks
+
+# ===== LOD Directories =====
 \lod
+\DynDOLOD
+\LODGen
+
+# ===== Large Creatures/Dragons =====
+# High-detail textures that shouldn't be downsized
 \alduin
 \Dragon
 \Durnehviir
@@ -41,5 +84,11 @@ basket01.dds
 \actors\dragon
 \actors\alduin
 \dlc01\actors\undeaddragon
-\DynDOLOD
-\LODGen
+
+# ===== Mod-Specific Exclusions =====
+\!_Rudy_Misc
+\!SR
+\!!SR
+\actors\character\payeyes
+\littlebaron
+\luxonbeacon

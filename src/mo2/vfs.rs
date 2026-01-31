@@ -48,7 +48,7 @@ impl FileSource {
 ///
 /// In MO2:
 /// - Game Data files are the base layer (lowest priority)
-/// - Mods override in priority order (higher priority = bottom of mod list)
+/// - Mods override in priority order (higher priority = top of mod list)
 /// - BSAs are loaded based on plugin order
 /// - Loose files always beat BSA files at the same priority level
 pub struct VirtualFileSystem {
@@ -77,8 +77,9 @@ impl VirtualFileSystem {
         // Layer 1: Vanilla game files (lowest priority)
         self.index_vanilla_files()?;
 
-        // Layer 2: Enabled mods in priority order (lowest to highest)
-        // This ensures higher priority mods overwrite lower ones
+        // Layer 2: Enabled mods (top of modlist = highest priority)
+        // Higher priority mods are processed first; lower priority mods
+        // only insert if no higher-priority file exists for that path
         // Collect first to avoid borrow checker issues
         let enabled_mods: Vec<_> = self.profile.enabled_mods().cloned().collect();
         for mod_entry in &enabled_mods {

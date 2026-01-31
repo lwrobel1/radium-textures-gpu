@@ -90,14 +90,14 @@ impl Profile {
     /// -ModName (disabled)
     /// *ModName (separator, treated as disabled)
     ///
-    /// CRITICAL: Mods at the TOP of the file have LOWEST priority
-    ///           Mods at the BOTTOM have HIGHEST priority (win conflicts)
+    /// CRITICAL: Mods at the TOP of the file have HIGHEST priority (win conflicts)
+    ///           Mods at the BOTTOM have LOWEST priority
     fn parse_modlist(path: &Path, mods_dir: &Path) -> Result<Vec<Mod>> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read modlist.txt from {:?}", path))?;
 
-        let mut mods = Vec::new();
-        let mut priority = 0;
+        // First pass: collect all valid mod entries
+        let mut entries: Vec<(ModState, String)> = Vec::new();
 
         for line in content.lines() {
             let line = line.trim();
@@ -114,17 +114,24 @@ impl Profile {
                 }
             };
 
-            let mod_path = mods_dir.join(name);
-
-            mods.push(Mod {
-                name: name.to_string(),
-                path: mod_path,
-                priority,
-                state,
-            });
-
-            priority += 1;
+            entries.push((state, name.to_string()));
         }
+
+        // Second pass: assign priority (top of file = highest number = wins)
+        let total = entries.len();
+        let mods: Vec<Mod> = entries
+            .into_iter()
+            .enumerate()
+            .map(|(i, (state, name))| {
+                let mod_path = mods_dir.join(&name);
+                Mod {
+                    name,
+                    path: mod_path,
+                    priority: total - 1 - i,
+                    state,
+                }
+            })
+            .collect();
 
         debug!("Parsed {} mods from modlist.txt", mods.len());
         Ok(mods)
@@ -169,12 +176,12 @@ impl Profile {
         Ok(archives)
     }
 
-    /// Get all enabled mods in priority order (lowest to highest)
+    /// Get all enabled mods in file order (highest priority first)
     pub fn enabled_mods(&self) -> impl Iterator<Item = &Mod> {
         self.mods.iter().filter(|m| m.state == ModState::Enabled)
     }
 
-    /// Get all enabled mods in reverse priority order (highest to lowest)
+    /// Get all enabled mods in reverse file order (lowest priority first)
     /// This is useful when building a "winning file" map
     pub fn enabled_mods_reverse(&self) -> impl Iterator<Item = &Mod> {
         self.mods
@@ -266,8 +273,8 @@ mod tests {
 
     #[test]
     fn test_modlist_parsing() {
-        // Test that priority increases from top to bottom
+        // Test that priority decreases from top to bottom
         let content = "+Mod1\n+Mod2\n-Mod3\n+Mod4\n";
-        // Mod4 should have highest priority
+        // Mod1 should have highest priority (top of file wins)
     }
 }

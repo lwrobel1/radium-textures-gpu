@@ -1,18 +1,30 @@
-# Fallout 4 Exclusion Patterns
-# Lines starting with # are comments
+# Fallout 4 Exclusions
+# Based on VRAMr analysis and texture format best practices
 #
-# Wildcard patterns: Use * for any characters (e.g., *_color.dds)
-# Path exclusions: Start with \ (e.g., \interface)
+# Pattern types:
+#   *pattern.dds  - Wildcard filename match
+#   \path         - Directory exclusion
+#   filename.dds  - Exact filename match
 
-# ===== Common Texture Suffixes to Exclude =====
+# ===== PBR Texture Suffixes =====
+# These use specific channel layouts that shouldn't be modified
 *_color.dds
 *_emissive.dds
 *_normal.dds
-*_g.dds
+*_rmaos.dds
+
+# ===== Specular/Glow/Environment Maps =====
+# Specular is typically embedded in normal map alpha channel
+# Note: *_s.dds won't match *_rmaos.dds (different suffix)
 *_s.dds
+*_g.dds
+*_e.dds
+
+# ===== Other Texture Suffixes =====
 *_OpenGL.dds
 
-# ===== LOD Textures (Not Loaded In-Game) =====
+# ===== LOD Textures =====
+# Already optimized for distance, resizing breaks LOD system
 *lod*_p.dds
 *_lod.dds
 
@@ -21,11 +33,12 @@
 \pipboy
 \hud
 
-# ===== Terrain and Landscape (Performance Critical) =====
+# ===== Terrain and Landscape =====
 \terrain
 \landscape
 
 # ===== Large Creatures and Bosses =====
+# High-detail textures that shouldn't be downsized
 \actors\deathclaw
 \actors\supermutant\behemoth
 \actors\mirelurk\queen
