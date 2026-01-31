@@ -53,6 +53,7 @@ unicode-normalization = "0.1"
 
 # Utilities
 itertools = "0.13"
+tempfile = "3.10"
 
 # GUI
 eframe = "0.29"
