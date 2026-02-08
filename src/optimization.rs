@@ -428,8 +428,10 @@ pub fn group_by_processing_type(
                     }
                 }
                 "Parallax" => {
-                    if is_rgb || is_pbr {
-                        groups.pbr_resize.push(proc_record);
+                    // Parallax maps are single-channel heightmaps - always BC4
+                    // regardless of PBR status (CS PBR _p.dds expects BC4)
+                    if is_rgb {
+                        groups.rgba_resize.push(proc_record);
                     } else {
                         groups.bc4_resize.push(proc_record);
                     }
@@ -548,12 +550,28 @@ fn process_single_texture(
     cmd.arg("-o").arg(&wine_output_dir);  // Output to the same directory as input
     cmd.arg("--single-proc");  // Single-threaded, let Rayon handle parallelization
 
-    // Add format conversion if specified
+    // Detect if source DDS uses an sRGB DXGI format (DX10 header at offset 128)
+    let source_srgb = {
+        let mut srgb = false;
+        if let Ok(mut f) = std::fs::File::open(full_path) {
+            use std::io::Read;
+            let mut hdr = [0u8; 132];
+            if f.read_exact(&mut hdr).is_ok() {
+                if &hdr[84..88] == b"DX10" {
+                    let dxgi = u32::from_le_bytes([hdr[128], hdr[129], hdr[130], hdr[131]]);
+                    srgb = matches!(dxgi, 28 | 72 | 75 | 78 | 91 | 99);
+                }
+            }
+        }
+        srgb
+    };
+
+    // Add format conversion if specified, preserving sRGB from source
     if let Some(fmt) = format {
         let texconv_format = match fmt.to_uppercase().as_str() {
-            "BC7" => "BC7_UNORM",
+            "BC7" => if source_srgb { "BC7_UNORM_SRGB" } else { "BC7_UNORM" },
             "BC4" => "BC4_UNORM",
-            "BC3" => "BC3_UNORM",
+            "BC3" => if source_srgb { "BC3_UNORM_SRGB" } else { "BC3_UNORM" },
             "RGBA" => "RGBA",
             "ARGB_8888" => "RGBA",
             _ => fmt,
@@ -704,6 +722,7 @@ fn process_single_texture_nvtt3(
     cmd.arg(temp_path);           // Output DDS (temp)
     cmd.arg(max_extent.to_string()); // Max dimension
     cmd.arg(format_arg);          // Format
+    cmd.arg("0");                 // sRGB hint: 0=use DX10 header only, legacy stays UNORM
 
     debug!("Running nvtt_resize_compress: {:?}", cmd);
 
@@ -874,14 +893,18 @@ fn process_batch_nvtt3_batched(
                 }
             };
 
-        // Write batch entries: input|output|max_extent|format
+        // Write batch entries: input|output|max_extent|format|srgb_hint
+        // srgb_hint: 0=use DX10 header only (legacy DDS stays UNORM)
+        // DX10 textures use their explicit DXGI format code.
+        // Legacy DDS (DXT1/DXT5) stay UNORM — game engine handles sRGB
+        // binding based on material slot, not DDS format flag.
         {
             let mut writer = std::io::BufWriter::new(&batch_file);
             for record in *chunk {
                 let max_extent = record.target_width.max(record.target_height);
                 if let Err(e) = writeln!(
                     writer,
-                    "{}|{}|{}|{}",
+                    "{}|{}|{}|{}|0",
                     record.extracted_path.display(),
                     record.extracted_path.display(),
                     max_extent,

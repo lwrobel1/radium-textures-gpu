@@ -28,6 +28,7 @@ struct TextureJob {
     std::string outputPath;
     int maxExtent;
     std::string format;
+    int srgbHint; // -1=auto (use header), 0=force linear, 1=force srgb
 };
 
 Format parseFormat(const std::string& fmt) {
@@ -116,6 +117,52 @@ void patchDdsHeader(const char* path, int width, int height, Format format) {
     fclose(f);
 }
 
+// Check if source DDS has a DX10 extended header (FourCC == "DX10")
+bool hasDX10Header(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+    unsigned char hdr[88];
+    bool dx10 = false;
+    if (fread(hdr, 1, 88, f) == 88) {
+        dx10 = (hdr[84] == 'D' && hdr[85] == 'X' && hdr[86] == '1' && hdr[87] == '0');
+    }
+    fclose(f);
+    return dx10;
+}
+
+// Detect if source DDS uses an sRGB DXGI format by reading the DX10 header.
+// sRGB formats: 28 (R8G8B8A8_UNORM_SRGB), 72 (BC1_SRGB), 75 (BC2_SRGB),
+//               78 (BC3_SRGB), 91 (B8G8R8A8_UNORM_SRGB), 99 (BC7_SRGB)
+bool isSourceSrgb(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+
+    unsigned char hdr[132];
+    bool srgb = false;
+    if (fread(hdr, 1, 132, f) == 132) {
+        if (hdr[84] == 'D' && hdr[85] == 'X' && hdr[86] == '1' && hdr[87] == '0') {
+            uint32_t dxgi = hdr[128] | (hdr[129] << 8) | (hdr[130] << 16) | (hdr[131] << 24);
+            srgb = (dxgi == 28 || dxgi == 72 || dxgi == 75 || dxgi == 78 || dxgi == 91 || dxgi == 99);
+        }
+    }
+    fclose(f);
+    return srgb;
+}
+
+// Determine sRGB for output based on source format and hint from caller.
+// - DX10 sources: use explicit DXGI format (most accurate)
+// - Legacy sources (DXT1/DXT3/DXT5): use srgbHint from texture type classification
+//   (Skyrim treats legacy textures as sRGB for diffuse, linear for normals)
+bool determineSrgb(const char* path, int srgbHint) {
+    if (hasDX10Header(path)) {
+        // DX10 textures have explicit sRGB in DXGI format - trust it
+        return isSourceSrgb(path);
+    }
+    // Legacy format - no sRGB info in header, use hint from Rust texture classifier
+    // hint: 1=diffuse/emissive (sRGB), 0=normal/specular/etc (linear), -1=auto(fallback to false)
+    return (srgbHint == 1);
+}
+
 std::vector<TextureJob> parseBatchFile(const char* batchFile) {
     std::vector<TextureJob> jobs;
     std::ifstream file(batchFile);
@@ -135,12 +182,14 @@ std::vector<TextureJob> parseBatchFile(const char* batchFile) {
         std::getline(iss, job.inputPath, '|');
         std::getline(iss, job.outputPath, '|');
 
-        std::string maxExtentStr, formatStr;
+        std::string maxExtentStr, formatStr, srgbStr;
         std::getline(iss, maxExtentStr, '|');
         std::getline(iss, formatStr, '|');
+        std::getline(iss, srgbStr, '|');
 
         job.maxExtent = std::atoi(maxExtentStr.c_str());
         job.format = formatStr;
+        job.srgbHint = srgbStr.empty() ? -1 : std::atoi(srgbStr.c_str());
 
         if (!job.inputPath.empty() && !job.outputPath.empty() && job.maxExtent > 0) {
             jobs.push_back(job);
@@ -151,23 +200,6 @@ std::vector<TextureJob> parseBatchFile(const char* batchFile) {
 }
 
 bool processTexture(const TextureJob& job, Context& context, int index, int total) {
-    // Diagnostic: dump input file info before processing
-    {
-        FILE* diag = fopen(job.inputPath.c_str(), "rb");
-        if (diag) {
-            fseek(diag, 0, SEEK_END);
-            long fsize = ftell(diag);
-            fseek(diag, 0, SEEK_SET);
-            unsigned char hdr[32] = {0};
-            fread(hdr, 1, 32, diag);
-            fclose(diag);
-            fprintf(stderr, "DIAG:%d/%d:%s:size=%ld:hdr=",
-                    index + 1, total, job.inputPath.c_str(), fsize);
-            for (int i = 0; i < 32; i++) fprintf(stderr, "%02x", hdr[i]);
-            fprintf(stderr, "\n");
-        }
-    }
-
     // Load input DDS
     Surface surface;
     if (!surface.load(job.inputPath.c_str())) {
@@ -179,9 +211,10 @@ bool processTexture(const TextureJob& job, Context& context, int index, int tota
     int origW = surface.width();
     int origH = surface.height();
 
-    // Force alpha mode to None so DX10 header writes miscFlags2=0
-    // Skyrim expects DDS_ALPHA_MODE_UNKNOWN (0), not DDS_ALPHA_MODE_STRAIGHT (1)
-    surface.setAlphaMode(AlphaMode_None);
+    // Let NVTT3 auto-detect alpha mode for correct BC7 mode selection.
+    // AlphaMode_None would cause BC7 to use modes 0-3 (no alpha), destroying
+    // alpha data needed for terrain blending. patchDdsHeader() handles the
+    // miscFlags2 header separately for Skyrim compatibility.
 
     // Move surface to GPU for CUDA-accelerated operations
     surface.ToGPU();
@@ -203,10 +236,18 @@ bool processTexture(const TextureJob& job, Context& context, int index, int tota
     compressionOptions.setFormat(format);
     compressionOptions.setQuality(Quality_Normal);
 
+    // Detect sRGB BEFORE setFileName (which truncates the file when input=output)
+    bool srgb = determineSrgb(job.inputPath.c_str(), job.srgbHint);
+
     // Set up output options
     OutputOptions outputOptions;
     outputOptions.setFileName(job.outputPath.c_str());
     outputOptions.setContainer(Container_DDS10);
+
+    // Preserve sRGB color space from source texture
+    if (srgb) {
+        outputOptions.setSrgbFlag(true);
+    }
 
     // Write header
     if (!context.outputHeader(surface, numMipmaps, compressionOptions, outputOptions)) {

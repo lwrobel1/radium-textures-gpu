@@ -12,6 +12,7 @@
 *_emissive.dds
 *_normal.dds
 *_rmaos.dds
+*_p.dds
 
 # ===== Specular/Glow/Environment Maps =====
 # Specular is typically embedded in normal map alpha channel

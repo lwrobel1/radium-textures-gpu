@@ -115,6 +115,46 @@ void patchDdsHeader(const char* path, int width, int height, Format format) {
     fclose(f);
 }
 
+// Detect if source DDS uses an sRGB DXGI format by reading the DX10 header.
+// Check if source DDS has a DX10 extended header (FourCC == "DX10")
+bool hasDX10Header(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+    unsigned char hdr[88];
+    bool dx10 = false;
+    if (fread(hdr, 1, 88, f) == 88) {
+        dx10 = (hdr[84] == 'D' && hdr[85] == 'X' && hdr[86] == '1' && hdr[87] == '0');
+    }
+    fclose(f);
+    return dx10;
+}
+
+// sRGB formats: 28 (R8G8B8A8_UNORM_SRGB), 72 (BC1_SRGB), 75 (BC2_SRGB),
+//               78 (BC3_SRGB), 91 (B8G8R8A8_UNORM_SRGB), 99 (BC7_SRGB)
+bool isSourceSrgb(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+
+    unsigned char hdr[132];
+    bool srgb = false;
+    if (fread(hdr, 1, 132, f) == 132) {
+        if (hdr[84] == 'D' && hdr[85] == 'X' && hdr[86] == '1' && hdr[87] == '0') {
+            uint32_t dxgi = hdr[128] | (hdr[129] << 8) | (hdr[130] << 16) | (hdr[131] << 24);
+            srgb = (dxgi == 28 || dxgi == 72 || dxgi == 75 || dxgi == 78 || dxgi == 91 || dxgi == 99);
+        }
+    }
+    fclose(f);
+    return srgb;
+}
+
+// Determine sRGB for output based on source format and hint from caller.
+bool determineSrgb(const char* path, int srgbHint) {
+    if (hasDX10Header(path)) {
+        return isSourceSrgb(path);
+    }
+    return (srgbHint == 1);
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 4) {
         printUsage(argv[0]);
@@ -125,6 +165,7 @@ int main(int argc, char* argv[]) {
     const char* outputPath = argv[2];
     int maxExtent = atoi(argv[3]);
     Format format = parseFormat(argc > 4 ? argv[4] : nullptr);
+    int srgbHint = (argc > 5) ? atoi(argv[5]) : -1; // -1=auto, 0=linear, 1=srgb
 
     if (maxExtent <= 0 || maxExtent > 16384) {
         fprintf(stderr, "Error: Invalid max_extent %d (must be 1-16384)\n", maxExtent);
@@ -141,10 +182,10 @@ int main(int argc, char* argv[]) {
     int origW = surface.width();
     int origH = surface.height();
 
-    // Force alpha mode to None so DX10 header writes miscFlags2=0
-    // Skyrim expects DDS_ALPHA_MODE_UNKNOWN (0), not DDS_ALPHA_MODE_STRAIGHT (1)
-    // NVTT3 auto-detects alpha and sets Transparency mode, which breaks Skyrim rendering
-    surface.setAlphaMode(AlphaMode_None);
+    // Let NVTT3 auto-detect alpha mode for correct BC7 mode selection.
+    // AlphaMode_None would cause BC7 to use modes 0-3 (no alpha), destroying
+    // alpha data needed for terrain blending. patchDdsHeader() handles the
+    // miscFlags2 header separately for Skyrim compatibility.
 
     // Move surface to GPU for CUDA-accelerated resize and mipmap operations
     // This makes resize() and buildNextMipmap() run on GPU instead of CPU
@@ -194,10 +235,18 @@ int main(int argc, char* argv[]) {
     }
     compressionOptions.setQuality(quality);
 
+    // Detect sRGB BEFORE setFileName (which truncates the file when input=output)
+    bool srgb = determineSrgb(inputPath, srgbHint);
+
     // Set up output options - use built-in file output
     OutputOptions outputOptions;
     outputOptions.setFileName(outputPath);
     outputOptions.setContainer(Container_DDS10); // Use DX10 container for BC7
+
+    // Preserve sRGB color space from source texture
+    if (srgb) {
+        outputOptions.setSrgbFlag(true);
+    }
 
     // Write header with mipmap count
     if (!context.outputHeader(surface, numMipmaps, compressionOptions, outputOptions)) {

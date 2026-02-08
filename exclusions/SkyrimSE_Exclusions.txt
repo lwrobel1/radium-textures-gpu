@@ -67,6 +67,10 @@ basket01.dds
 # Environment reflection cubemaps
 \cubemaps
 
+# ===== Sky =====
+# Sky textures cover the entire dome; downsizing causes visible blockiness
+\sky
+
 # ===== Terrain & Landscape =====
 # Large continuous textures, special handling needed
 \terrain

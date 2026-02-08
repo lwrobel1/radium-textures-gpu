@@ -40,7 +40,7 @@ impl TextureDiscoveryService {
             Some("Normal".to_string())
         } else if without_ext.ends_with("_s") {
             Some("Specular".to_string())
-        } else if without_ext.ends_with("_m") {
+        } else if without_ext.ends_with("_m") || without_ext.ends_with("_p") {
             Some("Parallax".to_string())
         } else if without_ext.ends_with("_sk") {
             Some("Subsurface".to_string())
