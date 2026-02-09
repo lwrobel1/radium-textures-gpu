@@ -428,12 +428,25 @@ pub fn group_by_processing_type(
                     }
                 }
                 "Parallax" => {
-                    // Parallax maps are single-channel heightmaps - always BC4
-                    // regardless of PBR status (CS PBR _p.dds expects BC4)
+                    // _p and _m suffixes both classify as Parallax.
+                    // _p is always single-channel (heightmap) → BC4.
+                    // _m is ambiguous: "mask" (single-channel) or "male variant" (full-color).
+                    // Resolve by checking source format: single-channel → BC4, multi-channel → BC7.
                     if is_rgb {
                         groups.rgba_resize.push(proc_record);
                     } else {
-                        groups.bc4_resize.push(proc_record);
+                        let fmt_upper = format.to_uppercase();
+                        let is_single_channel = matches!(
+                            fmt_upper.as_str(),
+                            "BC4" | "BC4_UNORM" | "BC4_SNORM" | "ATI1" | "ATI1N"
+                        );
+                        if is_single_channel {
+                            groups.bc4_resize.push(proc_record);
+                        } else {
+                            // Multi-channel source (DXT1/DXT3/DXT5/BC7/etc.) —
+                            // this is a color texture (e.g. male variant), not a mask.
+                            groups.bc7_resize.push(proc_record);
+                        }
                     }
                 }
                 "Diffuse" => {
@@ -722,7 +735,7 @@ fn process_single_texture_nvtt3(
     cmd.arg(temp_path);           // Output DDS (temp)
     cmd.arg(max_extent.to_string()); // Max dimension
     cmd.arg(format_arg);          // Format
-    cmd.arg("0");                 // sRGB hint: 0=use DX10 header only, legacy stays UNORM
+    cmd.arg("0");                 // sRGB hint: always 0 (legacy stays UNORM)
 
     debug!("Running nvtt_resize_compress: {:?}", cmd);
 
@@ -894,10 +907,7 @@ fn process_batch_nvtt3_batched(
             };
 
         // Write batch entries: input|output|max_extent|format|srgb_hint
-        // srgb_hint: 0=use DX10 header only (legacy DDS stays UNORM)
-        // DX10 textures use their explicit DXGI format code.
-        // Legacy DDS (DXT1/DXT5) stay UNORM — game engine handles sRGB
-        // binding based on material slot, not DDS format flag.
+        // srgb_hint: always 0 (legacy stays UNORM)
         {
             let mut writer = std::io::BufWriter::new(&batch_file);
             for record in *chunk {

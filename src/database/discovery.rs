@@ -41,6 +41,10 @@ impl TextureDiscoveryService {
         } else if without_ext.ends_with("_s") {
             Some("Specular".to_string())
         } else if without_ext.ends_with("_m") || without_ext.ends_with("_p") {
+            // _p = parallax/heightmap, _m = mask/metallic OR male variant
+            // Actual format (BC4 vs BC7) is resolved in grouping stage based on
+            // source DDS format — multi-channel sources → Diffuse (BC7),
+            // single-channel sources → Parallax (BC4).
             Some("Parallax".to_string())
         } else if without_ext.ends_with("_sk") {
             Some("Subsurface".to_string())
